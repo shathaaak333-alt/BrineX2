@@ -1,180 +1,148 @@
-# ==========================================================
-# BrineX Smart Brine Recovery Platform (Simple & Stable)
-# No matplotlib version – Streamlit native charts
-# ==========================================================
-
 import streamlit as st
-import numpy as np
 import pandas as pd
+import numpy as np
 
-st.set_page_config(page_title="BrineX Platform", layout="wide")
+# --------------------------------------------------
+# PAGE CONFIG
+# --------------------------------------------------
+st.set_page_config(
+    page_title="BrineX Smart Brine Recovery & Economic Optimization Platform",
+    layout="wide"
+)
 
-# ----------------------------------------------------------
+# --------------------------------------------------
 # HEADER
-# ----------------------------------------------------------
-col1, col2 = st.columns([8,1])
+# --------------------------------------------------
+col1, col2 = st.columns([8, 2])
+
 with col1:
     st.title("BrineX Smart Brine Recovery & Economic Optimization Platform")
+    st.markdown("### AI-Driven Resource Recovery & Profit Optimization")
+
 with col2:
-    st.markdown("### 🔷 BrineX")
+    st.markdown("## 🔷 BrineX")
 
 st.markdown("---")
 
-# ----------------------------------------------------------
-# SIDEBAR SETTINGS
-# ----------------------------------------------------------
+# --------------------------------------------------
+# SIDEBAR – ECONOMIC ASSUMPTIONS
+# --------------------------------------------------
 st.sidebar.header("Economic Assumptions")
 
-eff = st.sidebar.slider("Recovery Efficiency", 0.5, 0.95, 0.75)
-price_mgoh2 = st.sidebar.number_input("Mg(OH)₂ Price (OMR/ton)", value=150.0)
-price_caco3 = st.sidebar.number_input("CaCO₃ Price (OMR/ton)", value=60.0)
+recovery_eff = st.sidebar.slider(
+    "Recovery Efficiency",
+    min_value=0.50,
+    max_value=0.95,
+    value=0.75,
+    step=0.01
+)
 
-uploaded_file = st.sidebar.file_uploader("Upload Lab Data (CSV or Excel)")
+mg_price = st.sidebar.number_input(
+    "Mg(OH)₂ Price (OMR/ton)",
+    value=150.0
+)
 
-# ----------------------------------------------------------
-# SIMPLE ML MODEL (Stable & Cached)
-# ----------------------------------------------------------
-@st.cache_resource
-def train_model():
-    rng = np.random.default_rng(42)
-    n = 2500
+ca_price = st.sidebar.number_input(
+    "CaCO₃ Price (OMR/ton)",
+    value=60.0
+)
 
-    mg = rng.uniform(400, 2600, n)
-    ca = rng.uniform(150, 1400, n)
-    sal = rng.uniform(45000, 95000, n)
-    temp = rng.uniform(15, 42, n)
-    flow = rng.uniform(2000, 60000, n)
+operating_cost = st.sidebar.number_input(
+    "Operating Cost (OMR/day)",
+    value=500.0
+)
 
-    X = np.vstack([mg, ca, sal, temp, flow]).T
+st.sidebar.markdown("---")
 
-    # Simple rule-based labels
-    y = np.where(mg > 1800, 1,
-        np.where(ca > 900, 2, 0))
+# --------------------------------------------------
+# FILE UPLOAD
+# --------------------------------------------------
+uploaded_file = st.sidebar.file_uploader(
+    "Upload Lab Data (CSV or Excel)",
+    type=["csv", "xlsx"]
+)
 
-    # Standardization
-    mu = X.mean(axis=0)
-    sigma = X.std(axis=0)
-    sigma[sigma == 0] = 1
-
-    return mu, sigma
-
-mu, sigma = train_model()
-
-LABELS = ["SKIP", "MAGNESIUM", "CALCIUM"]
-
-# ----------------------------------------------------------
-# MAIN APP
-# ----------------------------------------------------------
-if uploaded_file:
+# --------------------------------------------------
+# LOAD DATA
+# --------------------------------------------------
+if uploaded_file is not None:
 
     try:
         if uploaded_file.name.endswith(".csv"):
             df = pd.read_csv(uploaded_file)
         else:
             df = pd.read_excel(uploaded_file)
-    except Exception as e:
-        st.error("File reading error: " + str(e))
-        st.stop()
 
-    required = ["Mg_mgL", "Ca_mgL", "Salinity_mgL", "Temp_C", "Flow_m3_day"]
+        st.success("File uploaded successfully!")
 
-    missing = [c for c in required if c not in df.columns]
-    if missing:
-        st.error(f"Missing required columns: {missing}")
-        st.stop()
+        st.subheader("Raw Lab Data")
+        st.dataframe(df)
 
-    modes = []
-    costs = []
-    productions = []
-    revenues = []
-    profits = []
+        # --------------------------------------------------
+        # ASSUMED REQUIRED COLUMNS
+        # --------------------------------------------------
+        # Required columns in uploaded file:
+        # Flow_m3_day, Mg_concentration_kg_m3, Ca_concentration_kg_m3
 
-    for _, row in df.iterrows():
+        required_columns = [
+            "Flow_m3_day",
+            "Mg_concentration_kg_m3",
+            "Ca_concentration_kg_m3"
+        ]
 
-        # Simple decision logic
-        if row["Mg_mgL"] > 1800:
-            mode = "MAGNESIUM"
-        elif row["Ca_mgL"] > 900:
-            mode = "CALCIUM"
+        if not all(col in df.columns for col in required_columns):
+            st.error("Uploaded file must contain these columns:")
+            st.write(required_columns)
+
         else:
-            mode = "SKIP"
 
-        cost = 0.035 * row["Flow_m3_day"]
+            # --------------------------------------------------
+            # CALCULATIONS
+            # --------------------------------------------------
+            df["Mg_recovered_ton_day"] = (
+                df["Flow_m3_day"]
+                * df["Mg_concentration_kg_m3"]
+                * recovery_eff
+                / 1000
+            )
 
-        if mode == "MAGNESIUM":
-            prod = ((row["Mg_mgL"]/1000) *
-                    row["Flow_m3_day"] * eff * 2.4)/1000
-            revenue = prod * price_mgoh2
+            df["Ca_recovered_ton_day"] = (
+                df["Flow_m3_day"]
+                * df["Ca_concentration_kg_m3"]
+                * recovery_eff
+                / 1000
+            )
 
-        elif mode == "CALCIUM":
-            prod = ((row["Ca_mgL"]/1000) *
-                    row["Flow_m3_day"] * eff * 2.5)/1000
-            revenue = prod * price_caco3
-        else:
-            prod = 0
-            revenue = 0
+            df["Revenue_Mg"] = df["Mg_recovered_ton_day"] * mg_price
+            df["Revenue_Ca"] = df["Ca_recovered_ton_day"] * ca_price
 
-        profit = revenue - cost
+            df["Total_Revenue"] = df["Revenue_Mg"] + df["Revenue_Ca"]
 
-        modes.append(mode)
-        costs.append(cost)
-        productions.append(prod)
-        revenues.append(revenue)
-        profits.append(profit)
+            df["Net_Profit"] = df["Total_Revenue"] - operating_cost
 
-    df["Mode"] = modes
-    df["Cost_OMR_day"] = np.round(costs,2)
-    df["Product_ton_day"] = np.round(productions,3)
-    df["Revenue_OMR_day"] = np.round(revenues,2)
-    df["Profit_OMR_day"] = np.round(profits,2)
+            # --------------------------------------------------
+            # KPI SECTION
+            # --------------------------------------------------
+            st.markdown("---")
+            st.subheader("Performance Indicators")
 
-    # ----------------------------------------------------------
-    # KPI DASHBOARD
-    # ----------------------------------------------------------
-    st.subheader("📊 Key Performance Indicators")
+            total_mg = df["Mg_recovered_ton_day"].sum()
+            total_ca = df["Ca_recovered_ton_day"].sum()
+            total_revenue = df["Total_Revenue"].sum()
+            total_profit = df["Net_Profit"].sum()
 
-    col1, col2, col3, col4 = st.columns(4)
+            col1, col2, col3, col4 = st.columns(4)
 
-    col1.metric("Total Profit (OMR)",
-                round(df["Profit_OMR_day"].sum(),2))
-    col2.metric("Total Revenue (OMR)",
-                round(df["Revenue_OMR_day"].sum(),2))
-    col3.metric("Total Cost (OMR)",
-                round(df["Cost_OMR_day"].sum(),2))
-    col4.metric("Average Production (ton/day)",
-                round(df["Product_ton_day"].mean(),3))
+            col1.metric("Total Mg(OH)₂ Recovered (ton/day)", round(total_mg, 2))
+            col2.metric("Total CaCO₃ Recovered (ton/day)", round(total_ca, 2))
+            col3.metric("Total Revenue (OMR/day)", round(total_revenue, 2))
+            col4.metric("Net Profit (OMR/day)", round(total_profit, 2))
 
-    st.markdown("---")
+            # --------------------------------------------------
+            # CHARTS
+            # --------------------------------------------------
+            st.markdown("---")
+            st.subheader("Revenue & Profit Trends")
 
-    # ----------------------------------------------------------
-    # MODE DISTRIBUTION
-    # ----------------------------------------------------------
-    st.subheader("Mode Distribution")
-    mode_counts = df["Mode"].value_counts()
-    st.bar_chart(mode_counts)
-
-    # ----------------------------------------------------------
-    # MONTHLY PROFIT (IF EXISTS)
-    # ----------------------------------------------------------
-    if "Month" in df.columns:
-        st.subheader("Monthly Profit")
-        monthly = df.groupby("Month")["Profit_OMR_day"].sum()
-        st.bar_chart(monthly)
-
-    st.markdown("---")
-
-    # ----------------------------------------------------------
-    # DATA TABLE
-    # ----------------------------------------------------------
-    st.subheader("Processed Data")
-    st.dataframe(df)
-
-    csv = df.to_csv(index=False).encode("utf-8")
-
-    st.download_button("Download Results",
-                       data=csv,
-                       file_name="brinex_results.csv",
-                       mime="text/csv")
-
-else:
-    st.info("Upload your lab data file to begin analysis.")
+            chart_data = df[["Total_Revenue", "Net_Profit"]]
+            st.bar_chart(chart_data)
