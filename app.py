@@ -2,12 +2,17 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
+# --------------------------------------------------
+# PAGE CONFIG
+# --------------------------------------------------
 st.set_page_config(
     page_title="BrineX Smart Brine Recovery & Economic Optimization Platform",
     layout="wide"
 )
 
+# --------------------------------------------------
 # HEADER
+# --------------------------------------------------
 col1, col2 = st.columns([8, 2])
 
 with col1:
@@ -19,7 +24,9 @@ with col2:
 
 st.markdown("---")
 
-# SIDEBAR
+# --------------------------------------------------
+# SIDEBAR – ECONOMIC ASSUMPTIONS
+# --------------------------------------------------
 st.sidebar.header("Economic Assumptions")
 
 recovery_eff = st.sidebar.slider(
@@ -42,11 +49,15 @@ operating_cost = st.sidebar.number_input(
 st.sidebar.markdown("---")
 
 uploaded_file = st.sidebar.file_uploader(
-    "Upload Lab Data (CSV or Excel)",
+    "Upload Lab Data (CSV or Excel) - Optional",
     type=["csv", "xlsx"]
 )
 
 # --------------------------------------------------
+# DATA SECTION
+# --------------------------------------------------
+
+st.subheader("Input Data")
 
 if uploaded_file:
 
@@ -56,69 +67,73 @@ if uploaded_file:
         df = pd.read_excel(uploaded_file)
 
     st.success("File uploaded successfully!")
-    st.subheader("Raw Lab Data")
     st.dataframe(df)
 
-    required_columns = [
-        "Flow_m3_day",
-        "Mg_concentration_kg_m3",
-        "Ca_concentration_kg_m3"
-    ]
+    st.markdown("### Select Relevant Columns")
 
-    if not all(col in df.columns for col in required_columns):
+    flow_col = st.selectbox("Flow (m3/day)", df.columns)
+    mg_col = st.selectbox("Mg Concentration (kg/m3)", df.columns)
+    ca_col = st.selectbox("Ca Concentration (kg/m3)", df.columns)
 
-        st.error("Uploaded file must contain these columns:")
-        st.write(required_columns)
-
-    else:
-
-        df["Mg_recovered_ton_day"] = (
-            df["Flow_m3_day"]
-            * df["Mg_concentration_kg_m3"]
-            * recovery_eff
-            / 1000
-        )
-
-        df["Ca_recovered_ton_day"] = (
-            df["Flow_m3_day"]
-            * df["Ca_concentration_kg_m3"]
-            * recovery_eff
-            / 1000
-        )
-
-        df["Revenue_Mg"] = df["Mg_recovered_ton_day"] * mg_price
-        df["Revenue_Ca"] = df["Ca_recovered_ton_day"] * ca_price
-
-        df["Total_Revenue"] = df["Revenue_Mg"] + df["Revenue_Ca"]
-        df["Net_Profit"] = df["Total_Revenue"] - operating_cost
-
-        st.markdown("---")
-        st.subheader("Performance Indicators")
-
-        total_mg = df["Mg_recovered_ton_day"].sum()
-        total_ca = df["Ca_recovered_ton_day"].sum()
-        total_revenue = df["Total_Revenue"].sum()
-        total_profit = df["Net_Profit"].sum()
-
-        col1, col2, col3, col4 = st.columns(4)
-
-        col1.metric("Total Mg(OH)₂ (ton/day)", round(total_mg, 2))
-        col2.metric("Total CaCO₃ (ton/day)", round(total_ca, 2))
-        col3.metric("Total Revenue (OMR/day)", round(total_revenue, 2))
-        col4.metric("Net Profit (OMR/day)", round(total_profit, 2))
-
-        st.markdown("---")
-        st.subheader("Revenue & Profit Trends")
-
-        st.bar_chart(df[["Total_Revenue", "Net_Profit"]])
-
-        st.markdown("---")
-        st.subheader("Optimization Insight")
-
-        if total_profit > 0:
-            st.success("✅ Project is PROFITABLE under current assumptions.")
-        else:
-            st.error("❌ Project is NOT profitable. Adjust recovery or pricing.")
+    flow = df[flow_col].mean()
+    mg_conc = df[mg_col].mean()
+    ca_conc = df[ca_col].mean()
 
 else:
-    st.info("Please upload lab data file to begin analysis.")
+    st.info("No file uploaded. Please enter values manually.")
+
+    flow = st.number_input("Flow (m3/day)", value=1000.0)
+    mg_conc = st.number_input("Mg Concentration (kg/m3)", value=2.0)
+    ca_conc = st.number_input("Ca Concentration (kg/m3)", value=1.5)
+
+# --------------------------------------------------
+# CALCULATIONS
+# --------------------------------------------------
+
+mg_recovered = flow * mg_conc * recovery_eff / 1000
+ca_recovered = flow * ca_conc * recovery_eff / 1000
+
+revenue_mg = mg_recovered * mg_price
+revenue_ca = ca_recovered * ca_price
+
+total_revenue = revenue_mg + revenue_ca
+net_profit = total_revenue - operating_cost
+
+# --------------------------------------------------
+# KPI SECTION
+# --------------------------------------------------
+
+st.markdown("---")
+st.subheader("Performance Indicators")
+
+col1, col2, col3, col4 = st.columns(4)
+
+col1.metric("Mg(OH)₂ Recovered (ton/day)", round(mg_recovered, 2))
+col2.metric("CaCO₃ Recovered (ton/day)", round(ca_recovered, 2))
+col3.metric("Total Revenue (OMR/day)", round(total_revenue, 2))
+col4.metric("Net Profit (OMR/day)", round(net_profit, 2))
+
+# --------------------------------------------------
+# CHART SECTION
+# --------------------------------------------------
+
+st.markdown("---")
+st.subheader("Economic Breakdown")
+
+chart_df = pd.DataFrame({
+    "Value": [revenue_mg, revenue_ca, operating_cost]
+}, index=["Revenue Mg", "Revenue Ca", "Operating Cost"])
+
+st.bar_chart(chart_df)
+
+# --------------------------------------------------
+# OPTIMIZATION INSIGHT
+# --------------------------------------------------
+
+st.markdown("---")
+st.subheader("Optimization Insight")
+
+if net_profit > 0:
+    st.success("✅ Project is PROFITABLE under current assumptions.")
+else:
+    st.error("❌ Project is NOT profitable. Adjust recovery, pricing, or cost.")
