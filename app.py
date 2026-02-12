@@ -1,11 +1,11 @@
 # ==========================================================
-# BrineX Smart Brine Recovery Platform (Stable Version)
+# BrineX Smart Brine Recovery Platform (Simple & Stable)
+# No matplotlib version – Streamlit native charts
 # ==========================================================
 
 import streamlit as st
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="BrineX Platform", layout="wide")
 
@@ -21,7 +21,7 @@ with col2:
 st.markdown("---")
 
 # ----------------------------------------------------------
-# SIDEBAR
+# SIDEBAR SETTINGS
 # ----------------------------------------------------------
 st.sidebar.header("Economic Assumptions")
 
@@ -32,13 +32,12 @@ price_caco3 = st.sidebar.number_input("CaCO₃ Price (OMR/ton)", value=60.0)
 uploaded_file = st.sidebar.file_uploader("Upload Lab Data (CSV or Excel)")
 
 # ----------------------------------------------------------
-# SAFE ML MODEL (Pre-trained once)
+# SIMPLE ML MODEL (Stable & Cached)
 # ----------------------------------------------------------
 @st.cache_resource
-def train_models():
-
+def train_model():
     rng = np.random.default_rng(42)
-    n = 3000
+    n = 2500
 
     mg = rng.uniform(400, 2600, n)
     ca = rng.uniform(150, 1400, n)
@@ -48,37 +47,23 @@ def train_models():
 
     X = np.vstack([mg, ca, sal, temp, flow]).T
 
-    # Mode rule (simple and stable)
+    # Simple rule-based labels
     y = np.where(mg > 1800, 1,
         np.where(ca > 900, 2, 0))
-
-    cost = 0.035 * flow + 0.0008 * flow*(mg/1500) + 0.0006 * flow*(ca/800)
 
     # Standardization
     mu = X.mean(axis=0)
     sigma = X.std(axis=0)
     sigma[sigma == 0] = 1
-    Xs = (X - mu)/sigma
 
-    # Add bias
-    Xb = np.hstack([np.ones((n,1)), Xs])
+    return mu, sigma
 
-    # Simple linear classifier (no softmax instability)
-    W = np.linalg.pinv(Xb) @ pd.get_dummies(y).values
-
-    # Ridge regression for cost
-    I = np.eye(Xb.shape[1])
-    I[0,0] = 0
-    wR = np.linalg.solve(Xb.T@Xb + 1.5*I, Xb.T@cost)
-
-    return W, wR, mu, sigma
-
-W, wR, mu, sigma = train_models()
+mu, sigma = train_model()
 
 LABELS = ["SKIP", "MAGNESIUM", "CALCIUM"]
 
 # ----------------------------------------------------------
-# MAIN
+# MAIN APP
 # ----------------------------------------------------------
 if uploaded_file:
 
@@ -98,21 +83,24 @@ if uploaded_file:
         st.error(f"Missing required columns: {missing}")
         st.stop()
 
-    results = []
+    modes = []
+    costs = []
+    productions = []
+    revenues = []
+    profits = []
 
     for _, row in df.iterrows():
 
-        x = np.array([[row[c] for c in required]])
-        xs = (x - mu)/sigma
-        xb = np.hstack([np.ones((1,1)), xs])
+        # Simple decision logic
+        if row["Mg_mgL"] > 1800:
+            mode = "MAGNESIUM"
+        elif row["Ca_mgL"] > 900:
+            mode = "CALCIUM"
+        else:
+            mode = "SKIP"
 
-        probs = xb @ W
-        mode_index = np.argmax(probs)
-        mode = LABELS[mode_index]
+        cost = 0.035 * row["Flow_m3_day"]
 
-        cost = float(xb @ wR)
-
-        # Production
         if mode == "MAGNESIUM":
             prod = ((row["Mg_mgL"]/1000) *
                     row["Flow_m3_day"] * eff * 2.4)/1000
@@ -128,13 +116,20 @@ if uploaded_file:
 
         profit = revenue - cost
 
-        results.append([mode, cost, prod, revenue, profit])
+        modes.append(mode)
+        costs.append(cost)
+        productions.append(prod)
+        revenues.append(revenue)
+        profits.append(profit)
 
-    df[["Mode","Cost_OMR_day","Product_ton_day",
-        "Revenue_OMR_day","Profit_OMR_day"]] = results
+    df["Mode"] = modes
+    df["Cost_OMR_day"] = np.round(costs,2)
+    df["Product_ton_day"] = np.round(productions,3)
+    df["Revenue_OMR_day"] = np.round(revenues,2)
+    df["Profit_OMR_day"] = np.round(profits,2)
 
     # ----------------------------------------------------------
-    # DASHBOARD
+    # KPI DASHBOARD
     # ----------------------------------------------------------
     st.subheader("📊 Key Performance Indicators")
 
@@ -151,23 +146,26 @@ if uploaded_file:
 
     st.markdown("---")
 
-    # Mode distribution
+    # ----------------------------------------------------------
+    # MODE DISTRIBUTION
+    # ----------------------------------------------------------
     st.subheader("Mode Distribution")
+    mode_counts = df["Mode"].value_counts()
+    st.bar_chart(mode_counts)
 
-    fig, ax = plt.subplots()
-    df["Mode"].value_counts().plot(kind="bar", ax=ax)
-    st.pyplot(fig)
-
-    # Monthly profit if exists
+    # ----------------------------------------------------------
+    # MONTHLY PROFIT (IF EXISTS)
+    # ----------------------------------------------------------
     if "Month" in df.columns:
         st.subheader("Monthly Profit")
         monthly = df.groupby("Month")["Profit_OMR_day"].sum()
-        fig2, ax2 = plt.subplots()
-        monthly.plot(kind="bar", ax=ax2)
-        st.pyplot(fig2)
+        st.bar_chart(monthly)
 
     st.markdown("---")
 
+    # ----------------------------------------------------------
+    # DATA TABLE
+    # ----------------------------------------------------------
     st.subheader("Processed Data")
     st.dataframe(df)
 
@@ -180,4 +178,3 @@ if uploaded_file:
 
 else:
     st.info("Upload your lab data file to begin analysis.")
-
