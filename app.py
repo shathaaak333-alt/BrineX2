@@ -1,139 +1,191 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
+import datetime
 
-# --------------------------------------------------
+# ---------------------------------------------------
 # PAGE CONFIG
-# --------------------------------------------------
+# ---------------------------------------------------
 st.set_page_config(
-    page_title="BrineX Smart Brine Recovery & Economic Optimization Platform",
+    page_title="BrineX – Smart Brine Management System",
     layout="wide"
 )
 
-# --------------------------------------------------
-# HEADER
-# --------------------------------------------------
-col1, col2 = st.columns([8, 2])
-
-with col1:
-    st.title("BrineX Smart Brine Recovery & Economic Optimization Platform")
-    st.markdown("### AI-Driven Resource Recovery & Profit Optimization")
-
-with col2:
-    st.markdown("## 🔷 BrineX")
-
+st.title("🌊 BrineX – AI-Powered Sustainable Brine Management System")
+st.markdown("Integrated ML + Economic + Environmental Decision Support Tool")
 st.markdown("---")
 
-# --------------------------------------------------
-# SIDEBAR – ECONOMIC ASSUMPTIONS
-# --------------------------------------------------
-st.sidebar.header("Economic Assumptions")
+# ---------------------------------------------------
+# MACHINE LEARNING SECTION (From Code 1)
+# ---------------------------------------------------
 
-recovery_eff = st.sidebar.slider(
-    "Recovery Efficiency",
-    0.50, 0.95, 0.75, 0.01
-)
+def standardize_fit(X):
+    mu = X.mean(axis=0)
+    sigma = X.std(axis=0)
+    sigma = np.where(sigma == 0, 1.0, sigma)
+    return (X - mu) / sigma, mu, sigma
 
-mg_price = st.sidebar.number_input(
-    "Mg(OH)₂ Price (OMR/ton)", value=150.0
-)
+def standardize_apply(X, mu, sigma):
+    return (X - mu) / sigma
 
-ca_price = st.sidebar.number_input(
-    "CaCO₃ Price (OMR/ton)", value=60.0
-)
+def softmax(z):
+    z = z - np.max(z, axis=1, keepdims=True)
+    e = np.exp(z)
+    return e / np.sum(e, axis=1, keepdims=True)
 
-operating_cost = st.sidebar.number_input(
-    "Operating Cost (OMR/day)", value=500.0
-)
+def generate_synthetic_data(n=4000, seed=42):
+    rng = np.random.default_rng(seed)
+    mg = rng.uniform(400, 2600, n)
+    ca = rng.uniform(150, 1400, n)
+    sal = rng.uniform(45000, 95000, n)
+    temp = rng.uniform(15, 42, n)
+    flow = rng.uniform(2000, 60000, n)
+    X = np.vstack([mg, ca, sal, temp, flow]).T
 
-st.sidebar.markdown("---")
+    y = np.zeros(n, dtype=int)
+    for i in range(n):
+        if mg[i] > 1700:
+            y[i] = 1
+        elif ca[i] > 900:
+            y[i] = 2
+        else:
+            y[i] = 0
 
-uploaded_file = st.sidebar.file_uploader(
-    "Upload Lab Data (CSV or Excel) - Optional",
-    type=["csv", "xlsx"]
-)
+    cost = 0.035 * flow + rng.normal(0, 20, n)
+    cost = np.maximum(cost, 0)
+    return X, y, cost
 
-# --------------------------------------------------
-# DATA SECTION
-# --------------------------------------------------
+def train_models():
+    X, y, cost = generate_synthetic_data()
+    Xs, mu, sigma = standardize_fit(X)
+    Xb = np.hstack([np.ones((Xs.shape[0],1)), Xs])
 
-st.subheader("Input Data")
+    k = 3
+    W = np.zeros((Xs.shape[1]+1, k))
+    Y = np.eye(k)[y]
 
-if uploaded_file:
+    for _ in range(600):
+        P = softmax(Xb @ W)
+        grad = Xb.T @ (P - Y) / len(X)
+        W -= 0.1 * grad
 
-    if uploaded_file.name.endswith(".csv"):
-        df = pd.read_csv(uploaded_file)
-    else:
-        df = pd.read_excel(uploaded_file)
+    wR = np.linalg.pinv(Xb) @ cost
+    return W, mu, sigma, wR
 
-    st.success("File uploaded successfully!")
-    st.dataframe(df)
+W, mu, sigma, wR = train_models()
+LABELS = ["SKIP", "MAGNESIUM", "CALCIUM"]
 
-    st.markdown("### Select Relevant Columns")
+# ---------------------------------------------------
+# SIDEBAR INPUT OPTIONS
+# ---------------------------------------------------
 
-    flow_col = st.selectbox("Flow (m3/day)", df.columns)
-    mg_col = st.selectbox("Mg Concentration (kg/m3)", df.columns)
-    ca_col = st.selectbox("Ca Concentration (kg/m3)", df.columns)
+mode_select = st.sidebar.radio("Choose Input Mode:",
+                                ["Manual Input", "Upload Lab File"])
 
-    flow = df[flow_col].mean()
-    mg_conc = df[mg_col].mean()
-    ca_conc = df[ca_col].mean()
+# ---------------------------------------------------
+# MANUAL INPUT MODE
+# ---------------------------------------------------
 
-else:
-    st.info("No file uploaded. Please enter values manually.")
+if mode_select == "Manual Input":
 
-    flow = st.number_input("Flow (m3/day)", value=1000.0)
-    mg_conc = st.number_input("Mg Concentration (kg/m3)", value=2.0)
-    ca_conc = st.number_input("Ca Concentration (kg/m3)", value=1.5)
+    Mg = st.sidebar.number_input("Mg (mg/L)", 0, 5000, 1800)
+    Ca = st.sidebar.number_input("Ca (mg/L)", 0, 5000, 900)
+    Sal = st.sidebar.number_input("Salinity (mg/L)", 0, 120000, 65000)
+    Temp = st.sidebar.number_input("Temperature (°C)", 0, 60, 30)
+    Flow = st.sidebar.number_input("Flow (m3/day)", 0, 500000, 100000)
 
-# --------------------------------------------------
-# CALCULATIONS
-# --------------------------------------------------
+    x = np.array([[Mg, Ca, Sal, Temp, Flow]])
+    Xs = standardize_apply(x, mu, sigma)
+    Xb = np.hstack([np.ones((1,1)), Xs])
+    probs = softmax(Xb @ W)[0]
+    mode = LABELS[np.argmax(probs)]
 
-mg_recovered = flow * mg_conc * recovery_eff / 1000
-ca_recovered = flow * ca_conc * recovery_eff / 1000
+    cost = float(Xb @ wR)
 
-revenue_mg = mg_recovered * mg_price
-revenue_ca = ca_recovered * ca_price
+    st.subheader("🤖 AI Treatment Recommendation")
+    st.success(mode)
 
-total_revenue = revenue_mg + revenue_ca
-net_profit = total_revenue - operating_cost
+    st.write("Prediction Confidence:")
+    st.write(f"Magnesium: {probs[1]:.2f}")
+    st.write(f"Calcium: {probs[2]:.2f}")
+    st.write(f"Skip: {probs[0]:.2f}")
 
-# --------------------------------------------------
-# KPI SECTION
-# --------------------------------------------------
+    revenue = (Mg * Flow / 1_000_000) * 2.5
+    profit = revenue - cost
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Estimated Cost (OMR/day)", f"{cost:,.2f}")
+    col2.metric("Estimated Revenue (OMR/day)", f"{revenue:,.2f}")
+    col3.metric("Estimated Profit (OMR/day)", f"{profit:,.2f}")
+
+# ---------------------------------------------------
+# FILE UPLOAD MODE (From Code 1 Full Pipeline)
+# ---------------------------------------------------
+
+if mode_select == "Upload Lab File":
+
+    uploaded_file = st.file_uploader("Upload CSV or Excel file")
+
+    if uploaded_file:
+        if uploaded_file.name.endswith(".csv"):
+            df = pd.read_csv(uploaded_file)
+        else:
+            df = pd.read_excel(uploaded_file)
+
+        st.write("Preview of Data:")
+        st.dataframe(df.head())
+
+        required = ["Mg_mgL","Ca_mgL","Salinity_mgL","Temp_C","Flow_m3_day"]
+
+        if all(col in df.columns for col in required):
+
+            results = []
+
+            for _, row in df.iterrows():
+                x = np.array([[row["Mg_mgL"], row["Ca_mgL"],
+                               row["Salinity_mgL"],
+                               row["Temp_C"],
+                               row["Flow_m3_day"]]])
+
+                Xs = standardize_apply(x, mu, sigma)
+                Xb = np.hstack([np.ones((1,1)), Xs])
+                probs = softmax(Xb @ W)[0]
+                mode = LABELS[np.argmax(probs)]
+                cost = float(Xb @ wR)
+
+                revenue = (row["Mg_mgL"] *
+                           row["Flow_m3_day"] / 1_000_000) * 2.5
+                profit = revenue - cost
+
+                results.append([mode, cost, revenue, profit])
+
+            df["ML_Mode"] = [r[0] for r in results]
+            df["Cost"] = [r[1] for r in results]
+            df["Revenue"] = [r[2] for r in results]
+            df["Profit"] = [r[3] for r in results]
+
+            st.subheader("📊 Results")
+            st.dataframe(df)
+
+            st.subheader("Mode Distribution")
+            st.bar_chart(df["ML_Mode"].value_counts())
+
+            st.subheader("Total Profit")
+            st.metric("Total Profit (OMR)",
+                      f"{df['Profit'].sum():,.2f}")
+
+            csv = df.to_csv(index=False).encode()
+            st.download_button("Download Results",
+                               csv,
+                               "BrineX_ML_Results.csv")
+
+        else:
+            st.error("Missing required columns in uploaded file.")
+
+# ---------------------------------------------------
+# FOOTER
+# ---------------------------------------------------
 
 st.markdown("---")
-st.subheader("Performance Indicators")
-
-col1, col2, col3, col4 = st.columns(4)
-
-col1.metric("Mg(OH)₂ Recovered (ton/day)", round(mg_recovered, 2))
-col2.metric("CaCO₃ Recovered (ton/day)", round(ca_recovered, 2))
-col3.metric("Total Revenue (OMR/day)", round(total_revenue, 2))
-col4.metric("Net Profit (OMR/day)", round(net_profit, 2))
-
-# --------------------------------------------------
-# CHART SECTION
-# --------------------------------------------------
-
-st.markdown("---")
-st.subheader("Economic Breakdown")
-
-chart_df = pd.DataFrame({
-    "Value": [revenue_mg, revenue_ca, operating_cost]
-}, index=["Revenue Mg", "Revenue Ca", "Operating Cost"])
-
-st.bar_chart(chart_df)
-
-# --------------------------------------------------
-# OPTIMIZATION INSIGHT
-# --------------------------------------------------
-
-st.markdown("---")
-st.subheader("Optimization Insight")
-
-if net_profit > 0:
-    st.success("✅ Project is PROFITABLE under current assumptions.")
-else:
-    st.error("❌ Project is NOT profitable. Adjust recovery, pricing, or cost.")
+st.markdown("Developed by BrineX | AI + Sustainability + Chemical Engineering 🌱")
