@@ -22,6 +22,14 @@ st.markdown("""
         border-radius: 10px;
         border: 1px solid #e0e0e0;
     }
+    .explanation-box {
+        background-color: #e8f4f8;
+        padding: 15px;
+        border-radius: 8px;
+        border-left: 5px solid #0E5A8A;
+        font-size: 14px;
+        margin-top: 10px;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -30,36 +38,37 @@ st.markdown("""
 # ==========================================
 def calculate_metrics(tds, na, mg, ca, flow, location):
     # 1. Recovery Calculations (Mass Balance)
-    # Conversion: mg/L * m3/day * (1000 L / 1 m3) * (1 kg / 1e6 mg) = kg/day
-    # Simplified: (mg/L * m3/day) / 1000
     mg_rec_kg = (mg * flow) / 1000.0
     na_rec_kg = (na * flow) / 1000.0
     ca_rec_kg = (ca * flow) / 1000.0
 
     # 2. Economic Value (Estimated Market Rates)
-    # Assumptions: Mg=$2.5/kg, Na=$0.12/kg, Ca=$0.08/kg
     val_mg = mg_rec_kg * 2.50
     val_na = na_rec_kg * 0.12
     val_ca = ca_rec_kg * 0.08
     total_val = val_mg + val_na + val_ca
 
     # 3. Environmental Score
-    base_score = 100 - (tds / 1200)
-    penalty = 15 if location == "High" else (8 if location == "Medium" else 0)
-    env_score = max(0, int(base_score - penalty))
+    # Formula: 100 - (TDS / 1200) - Location Penalty
+    base_deduction = tds / 1200
+    loc_penalty = 15 if location == "High" else (8 if location == "Medium" else 0)
+    
+    raw_score = 100 - base_deduction - loc_penalty
+    env_score = max(0, int(raw_score))
 
     # 4. Risk Level
     if env_score >= 75: risk_lvl = "Low Risk"
     elif env_score >= 45: risk_lvl = "Moderate Risk"
     else: risk_lvl = "High Risk"
 
-    # 5. Salinity Reduction (Hypothetical Process Efficiency)
-    sal_reduction = tds * 0.35  # 35% reduction assumption
+    # 5. Salinity Reduction
+    sal_reduction = tds * 0.35 
 
     return {
         "mg_kg": mg_rec_kg, "na_kg": na_rec_kg, "ca_kg": ca_rec_kg,
         "val_mg": val_mg, "val_na": val_na, "val_ca": val_ca, "total_val": total_val,
-        "env_score": env_score, "risk": risk_lvl, "sal_red": sal_reduction
+        "env_score": env_score, "risk": risk_lvl, "sal_red": sal_reduction,
+        "loc_penalty": loc_penalty
     }
 
 def get_recommendation(tds, mg, location):
@@ -80,7 +89,6 @@ with st.sidebar:
     st.title("BrineX Parameters")
     st.markdown("---")
     
-    # Input Groups
     st.subheader("💧 Water Quality")
     in_tds = st.number_input("TDS (mg/L)", 0, 150000, 65000, step=500)
     in_na = st.number_input("Sodium - Na⁺ (mg/L)", 0, 60000, 22000, step=100)
@@ -92,7 +100,7 @@ with st.sidebar:
     in_loc = st.selectbox("Environmental Sensitivity", ["Low", "Medium", "High"])
     
     st.markdown("---")
-    st.caption("v2.0 | Developed by BrineX Engineering")
+    st.caption("v2.1 | Developed by BrineX Engineering")
 
 # ==========================================
 # 4. MAIN DASHBOARD
@@ -104,7 +112,6 @@ with col_h1:
     st.title("Sustainable Brine Management System")
     st.markdown("#### **Decision Support & Techno-Economic Analysis**")
 with col_h2:
-    # Live Status Badge
     rec_strategy = get_recommendation(in_tds, in_mg, in_loc)
     st.info(f"**Strategy:**\n{rec_strategy}")
 
@@ -139,36 +146,46 @@ with tab1:
     
     with col_t1_2:
         st.subheader("Ion Concentration Analysis")
-        # Native Streamlit Chart (Interactive)
         chart_df = pd.DataFrame({
             "Ion": ["Sodium (Na)", "Magnesium (Mg)", "Calcium (Ca)"],
             "Concentration (mg/L)": [in_na, in_mg, in_ca]
         }).set_index("Ion")
-        
         st.bar_chart(chart_df, color="#0E5A8A", height=300)
 
-# --- TAB 2: ENVIRONMENTAL IMPACT ---
+# --- TAB 2: ENVIRONMENTAL IMPACT (UPDATED) ---
 with tab2:
     col_t2_1, col_t2_2 = st.columns(2)
     
     with col_t2_1:
         st.subheader("Sustainability Score")
-        # Dynamic Color for Score
+        
+        # Score Display
         score_color = "green" if data['env_score'] > 75 else ("orange" if data['env_score'] > 45 else "red")
         st.markdown(f"<h1 style='color:{score_color}'>{data['env_score']}/100</h1>", unsafe_allow_html=True)
         st.markdown(f"**Risk Level:** {data['risk']}")
-        
         st.progress(data['env_score'] / 100)
+        
+        # --- ADDED EXPLANATION HERE ---
+        st.markdown(f"""
+        <div class="explanation-box">
+        <b>ℹ️ How is this calculated?</b><br>
+        This index represents the environmental safety of the brine discharge.<br>
+        <ul>
+            <li><b>Baseline:</b> Starts at 100 points (Perfect).</li>
+            <li><b>Salinity Penalty:</b> -1 point for every ~1200 mg/L of TDS.</li>
+            <li><b>Location Penalty:</b> -{data['loc_penalty']} points due to '{in_loc}' sensitivity.</li>
+        </ul>
+        </div>
+        """, unsafe_allow_html=True)
+        # ------------------------------
     
     with col_t2_2:
         st.subheader("Salinity Reduction Impact")
-        # Comparison Chart
         sal_df = pd.DataFrame({
             "Stage": ["Initial TDS", "Post-Treatment TDS"],
             "mg/L": [in_tds, in_tds - data['sal_red']]
         }).set_index("Stage")
-        
-        st.bar_chart(sal_df, color=["#FF4B4B", "#00CC96"][0]) # Uses default theme color
+        st.bar_chart(sal_df, color=["#FF4B4B", "#00CC96"][0])
 
 # --- TAB 3: REPORT ---
 with tab3:
@@ -190,9 +207,9 @@ with tab3:
     
     3. ECONOMIC PROJECTION (DAILY)
     - Total Value: ${data['total_val']:,.2f}
-    - Magnesium: ${data['val_mg']:,.2f} ({data['mg_kg']:,.0f} kg)
-    - Sodium:    ${data['val_na']:,.2f} ({data['na_kg']:,.0f} kg)
-    - Calcium:   ${data['val_ca']:,.2f} ({data['ca_kg']:,.0f} kg)
+    - Magnesium: ${data['val_mg']:,.2f}
+    - Sodium:    ${data['val_na']:,.2f}
+    - Calcium:   ${data['val_ca']:,.2f}
     
     ----------------------------
     Generated by BrineX Decision Support System
