@@ -158,7 +158,7 @@ with st.sidebar:
     in_loc = st.selectbox("Environmental Sensitivity", ["Low", "Medium", "High"], help="Sensitivity of discharge location")
     
     st.markdown("---")
-    st.caption("v3.0 | Developed by BrineX Engineering")
+    st.caption("v3.1 | Developed by BrineX Engineering")
 
 # ==========================================
 # 4. MAIN DASHBOARD
@@ -217,7 +217,7 @@ with tab1:
         }).set_index("Ion")
         st.bar_chart(chart_df, color="#0E5A8A", height=320)
 
-# --- TAB 2: ENVIRONMENTAL IMPACT ---
+# --- TAB 2: ENVIRONMENTAL IMPACT (UPDATED) ---
 with tab2:
     col_t2_1, col_t2_2 = st.columns(2)
     
@@ -230,16 +230,14 @@ with tab2:
         st.markdown(f"**Risk Level:** {data['risk']}")
         st.progress(data['env_score'] / 100)
         
-        # Explanation Box
+        # Explanation Box (Calculation)
         st.markdown(f"""
         <div class="explanation-box">
-        <b>ℹ️ How is this calculated?</b><br>
-        This index represents the environmental safety of the brine discharge.<br>
-        <ul style="margin-top:5px;">
-            <li><b>Baseline:</b> 100 points (Perfect).</li>
-            <li><b>Salinity Penalty:</b> -{int(in_tds/1200)} points (based on {in_tds} mg/L TDS).</li>
-            <li><b>Location Penalty:</b> -{data['loc_penalty']} points (Location: {in_loc}).</li>
-        </ul>
+        <b>ℹ️ Calculation Logic:</b><br>
+        100 (Baseline) <br>
+        - {int(in_tds/1200)} (Salinity Penalty) <br>
+        - {data['loc_penalty']} (Location Penalty: {in_loc}) <br>
+        <b>= {data['env_score']} Total Score</b>
         </div>
         """, unsafe_allow_html=True)
     
@@ -250,6 +248,20 @@ with tab2:
             "mg/L": [in_tds, in_tds - data['sal_red']]
         }).set_index("Stage")
         st.bar_chart(sal_df, color=["#FF4B4B", "#00CC96"][0])
+
+    # --- NEW: DETAILED SCORE INTERPRETATION SECTION ---
+    st.markdown("---")
+    with st.expander("ℹ️ Guide: How to Interpret the Sustainability Score"):
+        st.markdown("""
+        ### **What does the score mean?**
+        The Sustainability Score evaluates the environmental safety of the brine discharge.
+        
+        | Score Range | Risk Level | Meaning & Action |
+        | :--- | :--- | :--- |
+        | **75 - 100** | 🟢 **Low Risk** | **Safe.** Discharge has minimal impact. Standard diffusion methods are acceptable. |
+        | **45 - 74** | 🟠 **Moderate Risk** | **Caution.** Potential stress on marine life. Dilution or pre-treatment required. |
+        | **0 - 44** | 🔴 **High Risk** | **Critical Threat.** Salinity or location is too sensitive. **Zero Liquid Discharge (ZLD)** is recommended. |
+        """)
 
 # --- TAB 3: REPORT ---
 with tab3:
