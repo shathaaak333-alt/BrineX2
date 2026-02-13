@@ -45,6 +45,19 @@ st.markdown("""
         margin-bottom: 25px;
         border: 1px solid rgba(0,0,0,0.1);
     }
+    
+    /* Strategy Box */
+    .strategy-box {
+        background-color: #e8f4f8;
+        padding: 20px;
+        border-radius: 10px;
+        border: 1px solid #b8daff;
+        margin-bottom: 20px;
+        color: #004085;
+        font-size: 18px;
+        font-weight: 500;
+        text-align: center;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -53,28 +66,22 @@ st.markdown("""
 # ==========================================
 def calculate_metrics(tds, na, mg, ca, flow, location):
     # 1. Recovery Calculations (Mass Balance)
-    # Formula: (mg/L * m3/day) / 1000 = kg/day
     mg_rec_kg = (mg * flow) / 1000.0
     na_rec_kg = (na * flow) / 1000.0
     ca_rec_kg = (ca * flow) / 1000.0
 
     # 2. Economic Value (Revenue)
-    # Market Assumptions: Mg=$2.5/kg, Na=$0.12/kg, Ca=$0.08/kg
     val_mg = mg_rec_kg * 2.50
     val_na = na_rec_kg * 0.12
     val_ca = ca_rec_kg * 0.08
     total_revenue = val_mg + val_na + val_ca
     
-    # 3. Profit Estimation
-    # Engineering Assumption: OpEx is approx 60% of Revenue for this tech
+    # 3. Profit Estimation (60% OpEx assumption)
     est_opex = total_revenue * 0.60
     est_profit = total_revenue - est_opex
 
     # 4. Sustainability Score Calculation
-    # Baseline: 100
-    # Salinity Penalty: -1 point per 1200 mg/L
     base_deduction = tds / 1200
-    # Location Penalty: High(-15), Medium(-8), Low(0)
     loc_penalty = 15 if location == "High" else (8 if location == "Medium" else 0)
     
     raw_score = 100 - base_deduction - loc_penalty
@@ -85,7 +92,7 @@ def calculate_metrics(tds, na, mg, ca, flow, location):
     elif env_score >= 45: risk_lvl = "Moderate Risk"
     else: risk_lvl = "High Risk"
 
-    # 6. Salinity Reduction (Hypothetical 35% efficiency)
+    # 6. Salinity Reduction
     sal_reduction = tds * 0.35 
 
     return {
@@ -97,37 +104,16 @@ def calculate_metrics(tds, na, mg, ca, flow, location):
     }
 
 def get_viability_verdict(score, profit):
-    """
-    Decides if the project is worth it based on Profit vs. Environment.
-    Returns: (Title, Description, BackgroundColor, TextColor)
-    """
-    # Threshold: Minimum $500/day profit to be "Viable"
     PROFIT_THRESHOLD = 500 
     
     if score >= 75 and profit > PROFIT_THRESHOLD:
-        return (
-            "🌟 HIGHLY VIABLE", 
-            "Excellent Balance: The project is **highly profitable** and **environmentally safe**. Highly recommended.", 
-            "#d4edda", "#155724"  # Green
-        )
+        return ("🌟 HIGHLY VIABLE", "Excellent Balance: The project is **highly profitable** and **environmentally safe**. Highly recommended.", "#d4edda", "#155724")
     elif score < 45:
-        return (
-            "⛔ NOT RECOMMENDED", 
-            "Critical Risk: The **environmental impact is too high** (Score < 45). Viability is rejected regardless of profit.", 
-            "#f8d7da", "#721c24"  # Red
-        )
+        return ("⛔ NOT RECOMMENDED", "Critical Risk: The **environmental impact is too high** (Score < 45). Viability is rejected regardless of profit.", "#f8d7da", "#721c24")
     elif profit < PROFIT_THRESHOLD:
-        return (
-            "⚠️ MARGINAL VIABILITY", 
-            "Financial Risk: Environmental score is good, but **profitability is low**. Requires subsidies or optimization.", 
-            "#fff3cd", "#856404"  # Yellow
-        )
+        return ("⚠️ MARGINAL VIABILITY", "Financial Risk: Environmental score is good, but **profitability is low**. Requires subsidies or optimization.", "#fff3cd", "#856404")
     else:
-        return (
-            "⚖️ PROCEED WITH CAUTION", 
-            "Mixed Outlook: Profitable, but **environmental risks exist** (Score 45-75). Strict monitoring required.", 
-            "#e2e3e5", "#383d41"  # Grey
-        )
+        return ("⚖️ PROCEED WITH CAUTION", "Mixed Outlook: Profitable, but **environmental risks exist** (Score 45-75). Strict monitoring required.", "#e2e3e5", "#383d41")
 
 def get_recommendation(tds, mg, location):
     if tds > 80000:
@@ -135,7 +121,7 @@ def get_recommendation(tds, mg, location):
     elif mg > 1500:
         return "Magnesium Recovery via Chemical Precipitation"
     elif location == "High":
-        return "Zero Liquid Discharge (ZLD)"
+        return "Zero Liquid Discharge (ZLD) Implementation"
     else:
         return "Controlled Dilution with Diffuser System"
 
@@ -148,17 +134,17 @@ with st.sidebar:
     st.markdown("---")
     
     st.subheader("💧 Water Quality")
-    in_tds = st.number_input("TDS (mg/L)", 0, 150000, 65000, step=500, help="Total Dissolved Solids")
+    in_tds = st.number_input("TDS (mg/L)", 0, 150000, 65000, step=500)
     in_na = st.number_input("Sodium - Na⁺ (mg/L)", 0, 60000, 22000, step=100)
     in_mg = st.number_input("Magnesium - Mg²⁺ (mg/L)", 0, 10000, 1800, step=50)
     in_ca = st.number_input("Calcium - Ca²⁺ (mg/L)", 0, 10000, 900, step=50)
     
     st.subheader("⚙️ Operations")
     in_flow = st.number_input("Flow Rate (m³/day)", 0, 600000, 120000, step=1000)
-    in_loc = st.selectbox("Environmental Sensitivity", ["Low", "Medium", "High"], help="Sensitivity of discharge location")
+    in_loc = st.selectbox("Environmental Sensitivity", ["Low", "Medium", "High"])
     
     st.markdown("---")
-    st.caption("v3.1 | Developed by BrineX Engineering")
+    st.caption("v3.2 | Developed by BrineX Engineering")
 
 # ==========================================
 # 4. MAIN DASHBOARD
@@ -173,7 +159,7 @@ verdict_title, verdict_desc, bg_color, text_color = get_viability_verdict(data['
 st.title("Sustainable Brine Management System")
 st.markdown("#### **Decision Support & Techno-Economic Analysis**")
 
-# --- VIABILITY VERDICT SECTION ---
+# --- 1. VIABILITY VERDICT ---
 st.markdown(f"""
     <div class="verdict-box" style="background-color: {bg_color}; color: {text_color};">
         <h2 style="margin:0;">{verdict_title}</h2>
@@ -181,13 +167,19 @@ st.markdown(f"""
     </div>
 """, unsafe_allow_html=True)
 
-# KPI Row
+# --- 2. RECOMMENDED STRATEGY (Full Width - Not Cut Off) ---
+st.markdown(f"""
+    <div class="strategy-box">
+        🛠️ <b>Recommended Strategy:</b> {rec_strategy}
+    </div>
+""", unsafe_allow_html=True)
+
+# --- 3. KPI METRICS (3 Columns now, leaving space for Strategy above) ---
 st.markdown("### 📈 Economic Outlook (Daily Estimates)")
-k1, k2, k3, k4 = st.columns(4)
+k1, k2, k3 = st.columns(3)
 k1.metric("Revenue Potential", f"${data['total_revenue']:,.0f}")
 k2.metric("OpEx Estimate (60%)", f"${data['total_revenue']*0.6:,.0f}", delta="-Cost", delta_color="inverse")
 k3.metric("Net Profit", f"${data['est_profit']:,.0f}", help="Revenue - OpEx")
-k4.metric("Strategy", rec_strategy.split(":")[0])
 
 st.markdown("---")
 
@@ -210,14 +202,13 @@ with tab1:
     
     with col_t1_2:
         st.subheader("Ion Concentration")
-        # Interactive Chart
         chart_df = pd.DataFrame({
             "Ion": ["Sodium (Na)", "Magnesium (Mg)", "Calcium (Ca)"],
             "Concentration (mg/L)": [in_na, in_mg, in_ca]
         }).set_index("Ion")
         st.bar_chart(chart_df, color="#0E5A8A", height=320)
 
-# --- TAB 2: ENVIRONMENTAL IMPACT (UPDATED) ---
+# --- TAB 2: ENVIRONMENTAL IMPACT ---
 with tab2:
     col_t2_1, col_t2_2 = st.columns(2)
     
@@ -230,7 +221,7 @@ with tab2:
         st.markdown(f"**Risk Level:** {data['risk']}")
         st.progress(data['env_score'] / 100)
         
-        # Explanation Box (Calculation)
+        # Explanation Box
         st.markdown(f"""
         <div class="explanation-box">
         <b>ℹ️ Calculation Logic:</b><br>
@@ -249,7 +240,7 @@ with tab2:
         }).set_index("Stage")
         st.bar_chart(sal_df, color=["#FF4B4B", "#00CC96"][0])
 
-    # --- NEW: DETAILED SCORE INTERPRETATION SECTION ---
+    # Detailed Score Interpretation
     st.markdown("---")
     with st.expander("ℹ️ Guide: How to Interpret the Sustainability Score"):
         st.markdown("""
@@ -277,22 +268,21 @@ with tab3:
     Status: {verdict_title.strip()}
     Reason: {verdict_desc}
     
-    2. FINANCIAL PROJECTION (DAILY)
+    2. TECHNICAL STRATEGY
+    --------------------
+    Recommended: {rec_strategy}
+    
+    3. FINANCIAL PROJECTION (DAILY)
     --------------------
     - Total Revenue:    ${data['total_revenue']:,.2f}
     - Est. OpEx (60%):  ${data['total_revenue']*0.6:,.2f}
     - Est. Net Profit:  ${data['est_profit']:,.2f}
     
-    3. ENVIRONMENTAL PROFILE
+    4. ENVIRONMENTAL PROFILE
     --------------------
     - Sustainability Score: {data['env_score']}/100 ({data['risk']})
     - Discharge Location:   {in_loc} (-{data['loc_penalty']} pts)
     - TDS Level:            {in_tds} mg/L
-    
-    4. TECHNICAL PARAMETERS
-    --------------------
-    - Flow Rate: {in_flow:,.0f} m3/day
-    - Recommended Strategy: {rec_strategy}
     
     ------------------------------------------------
     Generated by BrineX System
